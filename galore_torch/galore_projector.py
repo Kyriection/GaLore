@@ -19,26 +19,33 @@ class GaLoreProjector:
         self.quant_n_bit = 4
 
     def project(self, full_rank_grad, iter):
+        # TODO: implement the quantizated projection for other proj_type, currently only support std
+
         if self.proj_type == 'std':
             if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
                 if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
-                    # self.ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
-                    float_ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
-
-                    # apply quantization
-                    if self.proj_quant:
-                        self.ortho_matrix, self.ortho_matrix_scales, self.ortho_matrix_zeros, self.ortho_matrix_shape = self._quantize(float_ortho_matrix, q_group_size=self.quant_group_size, n_bit=self.quant_n_bit)
-                    else:
-                        self.ortho_matrix = float_ortho_matrix
-
+                    self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
                     import pdb; pdb.set_trace()
 
+                if self.proj_quant:
+                    float_ortho_matrix = self.unpack_int4_projection()
+                else:
+                    float_ortho_matrix = self.ortho_matrix
+                
+                pdb.set_trace()
 
-                low_rank_grad = torch.matmul(full_rank_grad, self.ortho_matrix.t().to(full_rank_grad.device.type))
+                low_rank_grad = torch.matmul(full_rank_grad, float_ortho_matrix.t().to(full_rank_grad.device.type))
             else:
                 if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
-                    self.ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='left')
-                low_rank_grad = torch.matmul(self.ortho_matrix.t().to(full_rank_grad.device.type), full_rank_grad)
+                    self.get_orthogonal_matrix(full_rank_grad, self.rank, type='left')
+
+                if self.proj_quant:
+                    float_ortho_matrix = self.unpack_int4_projection()
+                else:
+                    float_ortho_matrix = self.ortho_matrix
+
+                low_rank_grad = torch.matmul(float_ortho_matrix.t().to(full_rank_grad.device.type), full_rank_grad)
+
         elif self.proj_type == 'reverse_std':
             if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
                 if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
@@ -104,11 +111,24 @@ class GaLoreProjector:
             B = Vh[:rank, :]
             if not float_data:
                 B = B.to(original_device).type(original_type)
+
+            if self.proj_quant:
+                self._quantize(B, q_group_size=self.quant_group_size, n_bit=self.quant_n_bit)
+            else:
+                self.ortho_matrix = B
+            
             return B
+
         elif type=='left':
             A = U[:, :rank]
             if not float_data:
                 A = A.to(original_device).type(original_type)
+
+            if self.proj_quant:
+                self._quantize(A, q_group_size=self.quant_group_size, n_bit=self.quant_n_bit)
+            else:
+                self.ortho_matrix = A
+
             return A
         elif type=='full':
             A = U[:, :rank]
@@ -139,8 +159,28 @@ class GaLoreProjector:
         assert torch.isnan(w).sum() == 0
 
         w = torch.clamp(torch.round(w / scales) + zeros, min_int, max_int).to(torch.uint8)
-        return w, scales, zeros, org_w_shape
+        import pdb; pdb.set_trace()
 
+        packed_w = pack_uint8_to_int4(w)
+
+        self.ortho_matrix = packed_w
+        self.ortho_matrix_scales = scales
+        self.ortho_matrix_zeros = zeros
+        self.ortho_matrix_shape = org_w_shape
+
+    def pack_uint8_to_int4(tensor):
+        reshaped = tensor.view(tensor.shape[0], -1, 2)
+        packed = (reshaped[:, :, 0] & 0x0F) | ((reshaped[:, :, 1] & 0x0F) << 4)
+        return packed
+
+    def unpack_int4_projection():
+        packed_tensor = self.ortho_matrix
+        unpacked_low = packed_tensor & 0x0F
+        unpacked_high = (packed_tensor >> 4) & 0x0F
+        unpacked = torch.stack([unpacked_low, unpacked_high], dim=-1).view(packed_tensor.shape[0], -1)
+
+        float_ortho_matrix = self.ortho_matrix_scales * (unpacked.to(self.ortho_matrix_scales.dtype) - self.ortho_matrix_zeros)
+        return float_ortho_matrix
 
 
 
