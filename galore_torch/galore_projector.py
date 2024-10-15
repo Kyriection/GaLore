@@ -160,9 +160,23 @@ class GaLoreProjector:
 
         w = torch.clamp(torch.round(w / scales) + zeros, min_int, max_int).to(torch.uint8)
         print(w)
+
+
+
+
         import pdb; pdb.set_trace()
 
         packed_w = self.pack_uint8_to_int4(w)
+
+        unpacked_low = packed_w & 0x0F
+        unpacked_high = (packed_w >> 4) & 0x0F
+        unpacked = torch.stack([unpacked_low, unpacked_high], dim=-1).view(packed_w.shape[0], -1)
+
+        print(unpacked)
+        pdb.set_trace()
+
+
+
 
         self.ortho_matrix = packed_w
         self.ortho_matrix_scales = scales
