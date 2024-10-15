@@ -68,11 +68,21 @@ class GaLoreProjector:
         return low_rank_grad
 
     def project_back(self, low_rank_grad):
+        # TODO: implement the quantizated projection for other proj_type, currently only support std
         if self.proj_type == 'std':
             if low_rank_grad.shape[0] >= low_rank_grad.shape[1]:
-                full_rank_grad = torch.matmul(low_rank_grad, self.ortho_matrix.to(low_rank_grad.device.type))
+                if self.proj_quant:
+                    float_ortho_matrix = self.unpack_int4_projection()
+                else:
+                    float_ortho_matrix = self.ortho_matrix
+                full_rank_grad = torch.matmul(low_rank_grad, float_ortho_matrix.to(low_rank_grad.device.type))
             else:
-                full_rank_grad = torch.matmul(self.ortho_matrix.to(low_rank_grad.device.type), low_rank_grad)
+                if self.proj_quant:
+                    float_ortho_matrix = self.unpack_int4_projection()
+                else:
+                    float_ortho_matrix = self.ortho_matrix
+                full_rank_grad = torch.matmul(float_ortho_matrix.to(low_rank_grad.device.type), low_rank_grad)
+
         elif self.proj_type == 'reverse_std':
             if low_rank_grad.shape[0] <= low_rank_grad.shape[1]: # note this is different from std
                 full_rank_grad = torch.matmul(self.ortho_matrix.to(low_rank_grad.device.type), low_rank_grad)
