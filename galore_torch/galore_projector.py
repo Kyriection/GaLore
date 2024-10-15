@@ -141,6 +141,7 @@ class GaLoreProjector:
             raise ValueError('type should be left, right or full')
 
     def _quantize(self, w, q_group_size=-1, n_bit=8):
+        print(w)
         org_w_shape = w.shape
         if q_group_size > 0:
             assert w.nelement() % q_group_size == 0
@@ -159,9 +160,10 @@ class GaLoreProjector:
         assert torch.isnan(w).sum() == 0
 
         w = torch.clamp(torch.round(w / scales) + zeros, min_int, max_int).to(torch.uint8)
+        print(w)
         import pdb; pdb.set_trace()
 
-        packed_w = pack_uint8_to_int4(w)
+        packed_w = self.pack_uint8_to_int4(w)
 
         self.ortho_matrix = packed_w
         self.ortho_matrix_scales = scales
