@@ -175,6 +175,7 @@ class GaLoreProjector:
         unpacked = torch.stack([unpacked_low, unpacked_high], dim=-1).view(packed_tensor.shape[0], -1)
 
         float_ortho_matrix = self.ortho_matrix_scales * (unpacked.to(self.ortho_matrix_scales.dtype) - self.ortho_matrix_zeros)
+        float_ortho_matrix = float_ortho_matrix.reshape(self.ortho_matrix_shape)
         return float_ortho_matrix
 
 
