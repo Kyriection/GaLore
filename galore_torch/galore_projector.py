@@ -170,12 +170,12 @@ class GaLoreProjector:
         self.ortho_matrix_zeros = zeros
         self.ortho_matrix_shape = org_w_shape
 
-    def pack_uint8_to_int4(tensor):
+    def pack_uint8_to_int4(self,tensor):
         reshaped = tensor.view(tensor.shape[0], -1, 2)
         packed = (reshaped[:, :, 0] & 0x0F) | ((reshaped[:, :, 1] & 0x0F) << 4)
         return packed
 
-    def unpack_int4_projection():
+    def unpack_int4_projection(self):
         packed_tensor = self.ortho_matrix
         unpacked_low = packed_tensor & 0x0F
         unpacked_high = (packed_tensor >> 4) & 0x0F
