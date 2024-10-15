@@ -140,8 +140,7 @@ class GaLoreProjector:
         else:
             raise ValueError('type should be left, right or full')
 
-    def _quantize(self, w, q_group_size=-1, n_bit=8):
-        print(w)
+    def _quantize(self, w, q_group_size=-1, n_bit=4):
         org_w_shape = w.shape
         if q_group_size > 0:
             assert w.nelement() % q_group_size == 0
@@ -177,10 +176,11 @@ class GaLoreProjector:
 
     def unpack_int4_projection(self):
         packed_tensor = self.ortho_matrix
+        print(packed_tensor)
         unpacked_low = packed_tensor & 0x0F
         unpacked_high = (packed_tensor >> 4) & 0x0F
         unpacked = torch.stack([unpacked_low, unpacked_high], dim=-1).view(packed_tensor.shape[0], -1)
-
+        print(unpacked)
         float_ortho_matrix = self.ortho_matrix_scales * (unpacked.to(self.ortho_matrix_scales.dtype) - self.ortho_matrix_zeros)
         return float_ortho_matrix
 
