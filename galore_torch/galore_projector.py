@@ -1,19 +1,39 @@
 import torch
 
 class GaLoreProjector:
-    def __init__(self, rank, verbose=False, update_proj_gap=200, scale=1.0, proj_type='std'):
+    def __init__(self, rank, verbose=False, update_proj_gap=200, scale=1.0, proj_type='std', proj_quant=False):
         self.rank = rank
         self.verbose = verbose
         self.update_proj_gap = update_proj_gap
         self.scale = scale
+
         self.ortho_matrix = None
+        self.ortho_matrix_scales = None
+        self.ortho_matrix_zeros = None
+        self.ortho_matrix_shape = None
+
         self.proj_type = proj_type
+
+        self.proj_quant = proj_quant
+        self.quant_group_size = 256
+        self.quant_n_bit = 4
 
     def project(self, full_rank_grad, iter):
         if self.proj_type == 'std':
             if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
                 if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
-                    self.ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
+                    # self.ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
+                    float_ortho_matrix = self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
+
+                    # apply quantization
+                    if self.proj_quant:
+                        self.ortho_matrix, self.ortho_matrix_scales, self.ortho_matrix_zeros, self.ortho_matrix_shape = self._quantize(float_ortho_matrix, q_group_size=self.quant_group_size, n_bit=self.quant_n_bit)
+                    else:
+                        self.ortho_matrix = float_ortho_matrix
+
+                    import pdb; pdb.set_trace()
+
+
                 low_rank_grad = torch.matmul(full_rank_grad, self.ortho_matrix.t().to(full_rank_grad.device.type))
             else:
                 if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
@@ -64,7 +84,6 @@ class GaLoreProjector:
 
         return full_rank_grad * self.scale
 
-
     # svd decomposition
     def get_orthogonal_matrix(self, weights, rank, type):
         module_params = weights
@@ -100,3 +119,33 @@ class GaLoreProjector:
             return [A, B]
         else:
             raise ValueError('type should be left, right or full')
+
+    def _quantize(self, w, q_group_size=-1, n_bit=8):
+        org_w_shape = w.shape
+        if q_group_size > 0:
+            assert w.nelement() % q_group_size == 0
+            w = w.reshape(-1, q_group_size)
+
+        assert w.dim() == 2
+
+        max_val = w.amax(dim=1, keepdim=True)
+        min_val = w.amin(dim=1, keepdim=True)
+        max_int = 2**n_bit - 1
+        min_int = 0
+        scales = (max_val - min_val).clamp(min=1e-5) / max_int
+        zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+
+        assert torch.isnan(scales).sum() == 0
+        assert torch.isnan(w).sum() == 0
+
+        w = torch.clamp(torch.round(w / scales) + zeros, min_int, max_int).to(torch.uint8)
+        return w, scales, zeros, org_w_shape
+
+
+
+
+
+
+
+
+
