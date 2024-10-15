@@ -25,14 +25,11 @@ class GaLoreProjector:
             if full_rank_grad.shape[0] >= full_rank_grad.shape[1]:
                 if self.ortho_matrix is None or iter % self.update_proj_gap == 0:
                     self.get_orthogonal_matrix(full_rank_grad, self.rank, type='right')
-                    import pdb; pdb.set_trace()
 
                 if self.proj_quant:
                     float_ortho_matrix = self.unpack_int4_projection()
                 else:
                     float_ortho_matrix = self.ortho_matrix
-                
-                pdb.set_trace()
 
                 low_rank_grad = torch.matmul(full_rank_grad, float_ortho_matrix.t().to(full_rank_grad.device.type))
             else:
@@ -159,24 +156,7 @@ class GaLoreProjector:
         assert torch.isnan(w).sum() == 0
 
         w = torch.clamp(torch.round(w / scales) + zeros, min_int, max_int).to(torch.uint8)
-        print(w)
-
-
-
-
-        import pdb; pdb.set_trace()
-
         packed_w = self.pack_uint8_to_int4(w)
-
-        unpacked_low = packed_w & 0x0F
-        unpacked_high = (packed_w >> 4) & 0x0F
-        unpacked = torch.stack([unpacked_low, unpacked_high], dim=-1).view(packed_w.shape[0], -1)
-
-        print(unpacked)
-        pdb.set_trace()
-
-
-
 
         self.ortho_matrix = packed_w
         self.ortho_matrix_scales = scales
@@ -190,11 +170,10 @@ class GaLoreProjector:
 
     def unpack_int4_projection(self):
         packed_tensor = self.ortho_matrix
-        print(packed_tensor)
         unpacked_low = packed_tensor & 0x0F
         unpacked_high = (packed_tensor >> 4) & 0x0F
         unpacked = torch.stack([unpacked_low, unpacked_high], dim=-1).view(packed_tensor.shape[0], -1)
-        print(unpacked)
+
         float_ortho_matrix = self.ortho_matrix_scales * (unpacked.to(self.ortho_matrix_scales.dtype) - self.ortho_matrix_zeros)
         return float_ortho_matrix
 
